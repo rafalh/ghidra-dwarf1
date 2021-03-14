@@ -31,7 +31,7 @@ import ghidra.util.task.TaskMonitor;
 public class DWARF1Analyzer extends AbstractAnalyzer {
 
 	public DWARF1Analyzer() {
-		super("DWARF1 Analyzer", "Analyzer of DWARF debug data in version 1", AnalyzerType.BYTE_ANALYZER);
+		super("DWARF1", "Analyzer of DWARF debug data in version 1", AnalyzerType.BYTE_ANALYZER);
 		setDefaultEnablement(false);
 		setSupportsOneTimeAnalysis();
 	}
