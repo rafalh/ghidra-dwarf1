@@ -1,7 +1,9 @@
 package com.github.rafalh.ghidra.dwarfone.model;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -14,8 +16,10 @@ public class DebugInfoEntry {
 	private final Tag tag;
 	private final Map<AttributeName, AttributeValue> attributes = new HashMap<>();
 	private final Map<Integer, AttributeValue> userAttributes = new HashMap<>();
+	private final DebugInfoEntry parent;
+	private final List<DebugInfoEntry> children = new ArrayList<>();
 	
-	public DebugInfoEntry(BinaryReader reader) throws IOException {
+	public DebugInfoEntry(BinaryReader reader, DebugInfoEntry parent) throws IOException {
 		long length = reader.readNextUnsignedInt();
 		long endIndex = reader.getPointerIndex() + length - 4;
 		if (length < 8) {
@@ -34,6 +38,10 @@ public class DebugInfoEntry {
 			} else {
 				userAttributes.put(at.getKey(), at.getValue());
 			}
+		}
+		this.parent = parent;
+		if (parent != null) {
+			parent.children.add(this);
 		}
 	}
 	
@@ -85,5 +93,9 @@ public class DebugInfoEntry {
 	@SuppressWarnings("unchecked")
 	public <T extends AttributeValue> Optional<T> getAttribute(AttributeName name) {
 		return Optional.ofNullable((T) attributes.get(name));
+	}
+	
+	public DebugInfoEntry getParent() {
+		return parent;
 	}
 }

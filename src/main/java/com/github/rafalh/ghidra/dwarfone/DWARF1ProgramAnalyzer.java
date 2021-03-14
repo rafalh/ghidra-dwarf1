@@ -1,6 +1,10 @@
 package com.github.rafalh.ghidra.dwarfone;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import com.github.rafalh.ghidra.dwarfone.model.AddrAttributeValue;
@@ -9,7 +13,9 @@ import com.github.rafalh.ghidra.dwarfone.model.BlockAttributeValue;
 import com.github.rafalh.ghidra.dwarfone.model.DebugInfoEntry;
 import com.github.rafalh.ghidra.dwarfone.model.LocationAtomOp;
 import com.github.rafalh.ghidra.dwarfone.model.LocationDescription;
+import com.github.rafalh.ghidra.dwarfone.model.RefAttributeValue;
 import com.github.rafalh.ghidra.dwarfone.model.StringAttributeValue;
+import com.github.rafalh.ghidra.dwarfone.model.Tag;
 
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteArrayProvider;
@@ -52,8 +58,26 @@ public class DWARF1ProgramAnalyzer {
 	
 	private void processDebugSection(ByteProvider bp) throws IOException {
 		BinaryReader br = new BinaryReader(bp, isLittleEndian());
+		DebugInfoEntry parent = null;
+		DebugInfoEntry prev = null;
+		List<DebugInfoEntry> dieList = new ArrayList<>();
+		Map<Long, DebugInfoEntry> dieMap = new HashMap<>();
 		while (br.getPointerIndex() < bp.length() && !monitor.isCancelled()) {
-			var die = new DebugInfoEntry(br);
+			long offset = br.getPointerIndex();
+			Optional<RefAttributeValue> parentSiblingOpt = Optional.ofNullable(parent)
+					.flatMap(die -> die.<RefAttributeValue>getAttribute(AttributeName.SIBLING));
+			Optional<RefAttributeValue> prevSiblingOpt = Optional.ofNullable(prev)
+					.flatMap(die -> die.<RefAttributeValue>getAttribute(AttributeName.SIBLING));
+			if (parentSiblingOpt.isPresent() && parentSiblingOpt.get().get() == offset) {
+				parent = parent.getParent();
+			} else if (prevSiblingOpt.isPresent() && prevSiblingOpt.get().get() != offset) {
+				parent = prev;
+			}
+			var die = new DebugInfoEntry(br, parent);
+			dieList.add(die);
+			dieMap.put(offset, die);
+		}
+		for (DebugInfoEntry die : dieList) {
 			processDebugInfoEntry(die);
 		}
 	}
