@@ -12,6 +12,7 @@ import ghidra.app.util.bin.BinaryReader;
 
 public class DebugInfoEntry {
 	
+	private final long ref;
 	private final int rawTag;
 	private final Tag tag;
 	private final Map<AttributeName, AttributeValue> attributes = new HashMap<>();
@@ -20,6 +21,7 @@ public class DebugInfoEntry {
 	private final List<DebugInfoEntry> children = new ArrayList<>();
 	
 	public DebugInfoEntry(BinaryReader reader, DebugInfoEntry parent) throws IOException {
+		ref = reader.getPointerIndex();
 		long length = reader.readNextUnsignedInt();
 		long endIndex = reader.getPointerIndex() + length - 4;
 		if (length < 8) {
@@ -40,7 +42,7 @@ public class DebugInfoEntry {
 			}
 		}
 		this.parent = parent;
-		if (parent != null) {
+		if (parent != null && tag != Tag.NULL) {
 			parent.children.add(this);
 		}
 	}
@@ -63,9 +65,9 @@ public class DebugInfoEntry {
 		case REF:
 			return new RefAttributeValue(reader.readNextUnsignedInt());
 		case DATA2:
-			return new ConstAttributeValue(reader.readNextShort());
+			return new ConstAttributeValue(reader.readNextUnsignedShort());
 		case DATA4:
-			return new ConstAttributeValue(reader.readNextInt());
+			return new ConstAttributeValue(reader.readNextUnsignedInt());
 		case DATA8:
 			return new ConstAttributeValue(reader.readNextLong());
 		case BLOCK2:
@@ -86,6 +88,10 @@ public class DebugInfoEntry {
 		return Objects.toString(tag) + attributes.toString();
 	}
 	
+	public long getRef() {
+		return ref;
+	}
+	
 	public Tag getTag() {
 		return tag;
 	}
@@ -97,5 +103,9 @@ public class DebugInfoEntry {
 	
 	public DebugInfoEntry getParent() {
 		return parent;
+	}
+	
+	public List<DebugInfoEntry> getChildren() {
+		return children;
 	}
 }

@@ -10,4 +10,9 @@ public class BlockAttributeValue implements AttributeValue {
 	public byte[] get() {
 		return block;
 	}
+	
+	@Override
+	public String toString() {
+		return block.toString();
+	}
 }
