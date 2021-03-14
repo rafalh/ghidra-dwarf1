@@ -28,12 +28,16 @@ import ghidra.program.model.address.Address;
 import ghidra.program.model.data.BuiltInDataTypeManager;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
+import ghidra.program.model.data.DataTypeConflictException;
 import ghidra.program.model.data.DataTypeConflictHandler;
 import ghidra.program.model.data.DataTypeManager;
+import ghidra.program.model.data.DataUtilities;
+import ghidra.program.model.data.DataUtilities.ClearDataMode;
 import ghidra.program.model.data.EnumDataType;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.SourceType;
+import ghidra.program.model.util.CodeUnitInsertionException;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
@@ -43,6 +47,8 @@ public class DWARF1ProgramAnalyzer {
 	private final MessageLog log;
 	private final Map<Long, DataType> userDataTypeMap = new HashMap<>();
 	private final CategoryPath categoryPath;
+	private final List<DebugInfoEntry> dieList = new ArrayList<>();
+	private final Map<Long, DebugInfoEntry> dieMap = new HashMap<>();
 	
 	public DWARF1ProgramAnalyzer(Program program, TaskMonitor monitor, MessageLog log) {
 		this.program = program;
@@ -72,8 +78,7 @@ public class DWARF1ProgramAnalyzer {
 		BinaryReader br = new BinaryReader(bp, isLittleEndian());
 		DebugInfoEntry parent = null;
 		DebugInfoEntry prev = null;
-		List<DebugInfoEntry> dieList = new ArrayList<>();
-		Map<Long, DebugInfoEntry> dieMap = new HashMap<>();
+		
 		while (br.getPointerIndex() < bp.length() && !monitor.isCancelled()) {
 			long offset = br.getPointerIndex();
 			Optional<RefAttributeValue> parentSiblingOpt = Optional.ofNullable(parent)
@@ -131,6 +136,10 @@ public class DWARF1ProgramAnalyzer {
 			return;
 		}
 		String name = nameOpt.orElseGet(() -> "anon_" + die.getRef());
+		if (name.equals("@class")) {
+			// FIXME: anonymous class?
+			return;
+		}
 		int size = byteSizeOpt.get().intValue();
 		DataTypeManager dataTypeManager = program.getDataTypeManager();
 		DataType existingDt = dataTypeManager.getDataType(categoryPath, name);
@@ -259,6 +268,19 @@ public class DWARF1ProgramAnalyzer {
 	private DataType getUserDataType(RefAttributeValue ref) {
 		var dtOpt = Optional.ofNullable(userDataTypeMap.get(ref.get()));
 		if (dtOpt.isEmpty()) {
+			// FIXME: dirty fix, may cause infinite recursion...
+			Optional.ofNullable(dieMap.get(ref.get()))
+					.ifPresent(die -> {
+						try {
+							processDebugInfoEntry(die);
+						} catch (IOException e) {
+							log.appendException(e);
+						}
+					});
+			// try again...
+			dtOpt = Optional.ofNullable(userDataTypeMap.get(ref.get()));
+		}
+		if (dtOpt.isEmpty()) {
 			log.appendMsg("Cannot find user type " + ref);
 		}
 		return dtOpt.orElse(DataType.DEFAULT);
@@ -337,7 +359,20 @@ public class DWARF1ProgramAnalyzer {
 			log.appendException(e);
 		}
 		
-		//program.getListing().createData(addr, null)
+		DataType dt = extractDataType(die);
+//		try {
+//			DataUtilities.createData(program, addr, dt, -1, false, ClearDataMode.CLEAR_ALL_CONFLICT_DATA);
+//		} catch (CodeUnitInsertionException e) {
+//			log.appendException(e);
+//		}
+		
+		try {
+			// a bit brutal... there should be an option for clearing
+			program.getListing().clearCodeUnits(addr, addr.add(dt.getLength()), false);
+			program.getListing().createData(addr, dt);
+		} catch (CodeUnitInsertionException | DataTypeConflictException e) {
+			log.appendException(e);
+		}
 	}
 
 	private void processGlobalSubrountine(DebugInfoEntry die) {

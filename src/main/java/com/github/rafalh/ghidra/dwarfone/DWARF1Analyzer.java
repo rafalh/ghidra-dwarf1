@@ -45,8 +45,8 @@ public class DWARF1Analyzer extends AbstractAnalyzer {
 	@Override
 	public void registerOptions(Options options, Program program) {
 
-		options.registerOption("Option name goes here", false, null,
-			"Option description goes here");
+//		options.registerOption("Option name goes here", false, null,
+//			"Option description goes here");
 	}
 	
 	@Override
