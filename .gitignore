@@ -1,0 +1,8 @@
+build
+dist
+bin
+.gradle
+.project
+.classpath
+.settings
+.antProperties.xml
