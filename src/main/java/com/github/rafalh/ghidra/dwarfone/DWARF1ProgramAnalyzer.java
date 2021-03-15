@@ -220,11 +220,10 @@ public class DWARF1ProgramAnalyzer {
 		if (byteSizeOpt.isEmpty()) {
 			return Optional.empty();
 		}
-		String name = nameOpt.orElseGet(() -> "anon_" + die.getRef());
-		if (name.equals("@class")) {
-			// FIXME: anonymous class?
-			return Optional.empty();
-		}
+		String name = nameOpt
+				// FIXME: anonymous class?
+				.filter(n -> !n.equals("@class"))
+				.orElseGet(() -> "anon_" + die.getRef());
 		int size = byteSizeOpt.get().intValue();
 		DataTypeManager dataTypeManager = program.getDataTypeManager();
 		DataType existingDt = dataTypeManager.getDataType(categoryPath, name);
