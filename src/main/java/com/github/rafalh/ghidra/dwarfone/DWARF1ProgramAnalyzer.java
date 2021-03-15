@@ -150,6 +150,8 @@ public class DWARF1ProgramAnalyzer {
 				return processEnumType(die);
 			case ARRAY_TYPE:
 				return processArrayType(die);
+			case SUBROUTINE_TYPE:
+				return processSubrountineType(die);
 			// TODO: TYPEDEF
 			default:
 				// skip other tags
@@ -158,6 +160,13 @@ public class DWARF1ProgramAnalyzer {
 		} catch (Exception e) {
 			throw new RuntimeException("Failed to process type debug info entry " + die, e);
 		}
+	}
+
+	private Optional<DataType> processSubrountineType(DebugInfoEntry die) {
+		// TODO
+		var dt = new PointerDataType(DataType.VOID);
+		userDataTypeMap.put(die.getRef(), dt);
+		return Optional.of(dt);
 	}
 
 	private Optional<DataType> processArrayType(DebugInfoEntry die) throws IOException {
