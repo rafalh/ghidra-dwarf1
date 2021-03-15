@@ -107,35 +107,42 @@ public class DWARF1ProgramAnalyzer {
 		}
 	}
 	
-	private void processDebugInfoEntry(DebugInfoEntry die) throws IOException {
+	private void processDebugInfoEntry(DebugInfoEntry die) {
 		//log.appendMsg(die.toString());
-		switch (die.getTag()) {
-		case GLOBAL_VARIABLE:
-			processGlobalVariable(die);
-			break;
-		case GLOBAL_SUBROUTINE:
-			processSubrountine(die);
-			break;
-		case SUBROUTINE:
-			processSubrountine(die);
-			break;
-		case CLASS_TYPE:
-			processClassType(die);
-			break;
-		case ENUMERATION_TYPE:
-			processEnumType(die);
-			break;
-		case ARRAY_TYPE:
-			//processArrayType(die);
-			break;
-		case TYPEDEF:
-			// TODO
-			break;
-		default:
-			// skip other tags
+		try {
+			switch (die.getTag()) {
+			case GLOBAL_VARIABLE:
+				processGlobalVariable(die);
+				break;
+			case LOCAL_VARIABLE:
+				processLocalVariable(die);
+				break;
+			case GLOBAL_SUBROUTINE:
+				processSubrountine(die);
+				break;
+			case SUBROUTINE:
+				processSubrountine(die);
+				break;
+			case CLASS_TYPE:
+				processClassType(die);
+				break;
+			case ENUMERATION_TYPE:
+				processEnumType(die);
+				break;
+			case ARRAY_TYPE:
+				//processArrayType(die);
+				break;
+			case TYPEDEF:
+				// TODO
+				break;
+			default:
+				// skip other tags
+			}
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to process debug info entry " + die, e);
 		}
 	}
-	
+
 	private void processArrayType(DebugInfoEntry die) throws IOException {
 		byte[] subscrData = die.<BlockAttributeValue>getAttribute(AttributeName.SUBSCR_DATA)
 				.map(av -> av.get())
@@ -149,6 +156,7 @@ public class DWARF1ProgramAnalyzer {
 				if (at == AttributeName.FUND_TYPE) {
 					FundamentalType ft = FundamentalType.fromValue(br.readNextUnsignedShort());
 				} else if (at == AttributeName.USER_DEF_TYPE) {
+					
 					// TODO
 				} else if (at == AttributeName.MOD_U_D_TYPE) {
 					// TODO
@@ -166,7 +174,7 @@ public class DWARF1ProgramAnalyzer {
 		}
 	}
 
-	private void processClassType(DebugInfoEntry die) throws IOException {
+	private void processClassType(DebugInfoEntry die) {
 		Optional<String> nameOpt = die.<StringAttributeValue>getAttribute(AttributeName.NAME).map(av -> av.get());
 		Optional<Number> byteSizeOpt = die.<ConstAttributeValue>getAttribute(AttributeName.BYTE_SIZE).map(av -> av.get());
 		if (byteSizeOpt.isEmpty()) {
@@ -204,12 +212,12 @@ public class DWARF1ProgramAnalyzer {
 		//sdt.realign();
 	}
 	
-	private void processClassTypeInheritance(Structure sdt, DebugInfoEntry die) throws IOException {
+	private void processClassTypeInheritance(Structure sdt, DebugInfoEntry die) {
 		DataType baseDt = extractDataType(die);
 		sdt.replaceAtOffset(0, baseDt, -1, "__base", null);
 	}
 
-	private void processClassTypeMember(Structure sdt, DebugInfoEntry die) throws IOException {
+	private void processClassTypeMember(Structure sdt, DebugInfoEntry die) {
 		String memberName = die.<StringAttributeValue>getAttribute(AttributeName.NAME)
 				.map(StringAttributeValue::get)
 				.orElse(null);
@@ -258,7 +266,7 @@ public class DWARF1ProgramAnalyzer {
 		}
 	}
 	
-	private int extractMemberOffset(DebugInfoEntry die) throws IOException {
+	private int extractMemberOffset(DebugInfoEntry die) {
 		Optional<BlockAttributeValue> locationAttributeOptional = die.getAttribute(AttributeName.LOCATION);
 		byte[] encodedLocation = locationAttributeOptional
 				.orElseThrow(() -> new IllegalArgumentException("expected location in " + die))
@@ -304,8 +312,7 @@ public class DWARF1ProgramAnalyzer {
 	private DataType decodeModFundType(byte[] data) {
 		var bp = new ByteArrayProvider(data);
 		BinaryReader br = new BinaryReader(bp, isLittleEndian());
-		Long udtRef = null;
-		FundamentalType ft = null;
+		FundamentalType ft;
 		List<TypeModifier> mods = new ArrayList<>();
 		long maxOffset = bp.length() - 2;
 		try {
@@ -323,7 +330,7 @@ public class DWARF1ProgramAnalyzer {
 	private DataType decodeModUserDefType(byte[] data) {
 		var bp = new ByteArrayProvider(data);
 		BinaryReader br = new BinaryReader(bp, isLittleEndian());
-		Long udtRef = null;
+		Long udtRef;
 		List<TypeModifier> mods = new ArrayList<>();
 		long maxOffset = bp.length() - 4;
 		try {
@@ -356,11 +363,7 @@ public class DWARF1ProgramAnalyzer {
 			// FIXME: dirty fix, may cause infinite recursion...
 			Optional.ofNullable(dieMap.get(ref.get()))
 					.ifPresent(die -> {
-						try {
-							processDebugInfoEntry(die);
-						} catch (IOException e) {
-							log.appendException(e);
-						}
+						processDebugInfoEntry(die);
 					});
 			// try again...
 			dtOpt = Optional.ofNullable(userDataTypeMap.get(ref.get()));
@@ -412,9 +415,13 @@ public class DWARF1ProgramAnalyzer {
 		}
 	}
 
-	private LocationDescription decodeLocation(byte[] encodedLocation) throws IOException {
+	private LocationDescription decodeLocation(byte[] encodedLocation) {
 		var bp = new ByteArrayProvider(encodedLocation);
-		return LocationDescription.read(bp, isLittleEndian());
+		try {
+			return LocationDescription.read(bp, isLittleEndian());
+		} catch (IOException e) {
+			throw new IllegalArgumentException("Failed to parse location", e);
+		}
 	}
 	
 	private Long offsetFromLocation(LocationDescription location) {
@@ -426,7 +433,7 @@ public class DWARF1ProgramAnalyzer {
 		return null;
 	}
 	
-	private void processGlobalVariable(DebugInfoEntry die) throws IOException {
+	private void processGlobalVariable(DebugInfoEntry die) {
 		Optional<StringAttributeValue> nameAttributeOptional = die.getAttribute(AttributeName.NAME);
 		Optional<BlockAttributeValue> locationAttributeOptional = die.getAttribute(AttributeName.LOCATION);
 		if (nameAttributeOptional.isEmpty() || locationAttributeOptional.isEmpty()) {
@@ -458,6 +465,16 @@ public class DWARF1ProgramAnalyzer {
 		} catch (CodeUnitInsertionException | DataTypeConflictException e) {
 			log.appendException(e);
 		}
+	}
+	
+
+	private void processLocalVariable(DebugInfoEntry die) {
+		if (die.getParent().getTag() != Tag.COMPILE_UNIT) {
+			// ignore parameters and local variables
+			// we are only interested in static variables
+			return;
+		}
+		processGlobalVariable(die);
 	}
 
 	private void processSubrountine(DebugInfoEntry die) {

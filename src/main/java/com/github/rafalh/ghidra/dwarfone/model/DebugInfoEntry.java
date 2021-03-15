@@ -85,7 +85,7 @@ public class DebugInfoEntry {
 	
 	@Override
 	public String toString() {
-		return Objects.toString(tag) + attributes.toString();
+		return Long.toHexString(ref) + ":" + Objects.toString(tag) + attributes.toString();
 	}
 	
 	public long getRef() {
