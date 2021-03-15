@@ -11,6 +11,8 @@ import java.util.Optional;
 
 import com.github.rafalh.ghidra.dwarfone.model.AddrAttributeValue;
 import com.github.rafalh.ghidra.dwarfone.model.AttributeName;
+import com.github.rafalh.ghidra.dwarfone.model.AttributeUtils;
+import com.github.rafalh.ghidra.dwarfone.model.AttributeValue;
 import com.github.rafalh.ghidra.dwarfone.model.BlockAttributeValue;
 import com.github.rafalh.ghidra.dwarfone.model.ConstAttributeValue;
 import com.github.rafalh.ghidra.dwarfone.model.DebugInfoEntry;
@@ -37,6 +39,7 @@ import ghidra.program.model.data.DataTypeConflictHandler;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.EnumDataType;
 import ghidra.program.model.data.PointerDataType;
+import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.listing.Program;
@@ -124,13 +127,8 @@ public class DWARF1ProgramAnalyzer {
 				processSubrountine(die);
 				break;
 			case CLASS_TYPE:
-				processClassType(die);
-				break;
 			case ENUMERATION_TYPE:
-				processEnumType(die);
-				break;
-			case ARRAY_TYPE:
-				//processArrayType(die);
+				processTypeDebugInfoEntry(die);
 				break;
 			case TYPEDEF:
 				// TODO
@@ -142,48 +140,90 @@ public class DWARF1ProgramAnalyzer {
 			throw new RuntimeException("Failed to process debug info entry " + die, e);
 		}
 	}
+	
+	private Optional<DataType> processTypeDebugInfoEntry(DebugInfoEntry die) {
+		try {
+			switch (die.getTag()) {
+			case CLASS_TYPE:
+				return processClassType(die);
+			case ENUMERATION_TYPE:
+				return processEnumType(die);
+			case ARRAY_TYPE:
+				return processArrayType(die);
+			// TODO: TYPEDEF
+			default:
+				// skip other tags
+				return Optional.empty();
+			}
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to process type debug info entry " + die, e);
+		}
+	}
 
-	private void processArrayType(DebugInfoEntry die) throws IOException {
+	private Optional<DataType> processArrayType(DebugInfoEntry die) throws IOException {
 		byte[] subscrData = die.<BlockAttributeValue>getAttribute(AttributeName.SUBSCR_DATA)
 				.map(av -> av.get())
 				.orElseThrow(() -> new IllegalArgumentException("array type without subscr_data " + die));
 		var bp = new ByteArrayProvider(subscrData);
+		List<Integer> dims = new ArrayList<>();
+		DataType baseDt = null;
 		BinaryReader br = new BinaryReader(bp, isLittleEndian());
 		while (br.getPointerIndex() < bp.length()) {
 			Format fmt = Format.decode(br.readNextByte());
 			if (fmt == Format.ET) {
-				AttributeName at = AttributeName.decode(br.readNextUnsignedShort() & AttributeName.MASK);
+				Map.Entry<Integer, AttributeValue> attributeEntry = AttributeUtils.readAttribute(br);
+				var at = AttributeName.decode(attributeEntry.getKey());
+				var av = attributeEntry.getValue();
 				if (at == AttributeName.FUND_TYPE) {
-					FundamentalType ft = FundamentalType.fromValue(br.readNextUnsignedShort());
+					FundamentalType ft = FundamentalType.fromValue(((ConstAttributeValue) av).get().intValue());
+					baseDt = convertFundamentalTypeToDataType(ft);
 				} else if (at == AttributeName.USER_DEF_TYPE) {
-					
-					// TODO
+					baseDt = getUserDataType(((RefAttributeValue) av).get());
+				} else if (at == AttributeName.MOD_FUND_TYPE) {
+					baseDt = decodeModFundType(((BlockAttributeValue) av).get());
 				} else if (at == AttributeName.MOD_U_D_TYPE) {
-					// TODO
+					baseDt = decodeModUserDefType(((BlockAttributeValue) av).get());
 				} else {
 					log.appendMsg("Unsupported type " + at + " in " + die);
+					break;
 				}
 			} else if (fmt == Format.FT_C_C) {
-				FundamentalType ft = FundamentalType.fromValue(br.readNextUnsignedShort());
+				// type of index - unused
+				FundamentalType.fromValue(br.readNextUnsignedShort());
 				int begin = br.readNextInt();
 				int end = br.readNextInt();
+				dims.add(end - begin);
 			} else {
 				log.appendMsg("Unsupported format " + fmt + " in " + die);
+				break;
 			}
-			
 		}
+		if (baseDt == null) {
+			return Optional.empty();
+		}
+		DataType dt = baseDt;
+		Collections.reverse(dims);
+		for (int dim : dims) {
+			if (dim <= 0) {
+				log.appendMsg("Bad array dim " + dim + " in " + die);
+				return Optional.empty();
+			}
+			dt = new ArrayDataType(dt, dim, -1);
+		}
+		userDataTypeMap.put(die.getRef(), dt);
+		return Optional.of(dt);
 	}
 
-	private void processClassType(DebugInfoEntry die) {
+	private Optional<DataType> processClassType(DebugInfoEntry die) {
 		Optional<String> nameOpt = die.<StringAttributeValue>getAttribute(AttributeName.NAME).map(av -> av.get());
 		Optional<Number> byteSizeOpt = die.<ConstAttributeValue>getAttribute(AttributeName.BYTE_SIZE).map(av -> av.get());
 		if (byteSizeOpt.isEmpty()) {
-			return;
+			return Optional.empty();
 		}
 		String name = nameOpt.orElseGet(() -> "anon_" + die.getRef());
 		if (name.equals("@class")) {
 			// FIXME: anonymous class?
-			return;
+			return Optional.empty();
 		}
 		int size = byteSizeOpt.get().intValue();
 		DataTypeManager dataTypeManager = program.getDataTypeManager();
@@ -191,7 +231,7 @@ public class DWARF1ProgramAnalyzer {
 		if (existingDt != null) {
 			// already imported
 			userDataTypeMap.put(die.getRef(), existingDt);
-			return;
+			return Optional.of(existingDt);
 		}
 		StructureDataType sdt = new StructureDataType(categoryPath, name, size, dataTypeManager);
 		Structure newDt = (Structure) dataTypeManager.addDataType(sdt, DataTypeConflictHandler.DEFAULT_HANDLER);
@@ -210,6 +250,7 @@ public class DWARF1ProgramAnalyzer {
 			}
 		}
 		//sdt.realign();
+		return Optional.of(newDt);
 	}
 	
 	private void processClassTypeInheritance(Structure sdt, DebugInfoEntry die) {
@@ -232,7 +273,7 @@ public class DWARF1ProgramAnalyzer {
 		sdt.replaceAtOffset(memberOffset, memberDt, -1, memberName, null);
 	}
 	
-	private void processEnumType(DebugInfoEntry die) throws IOException {
+	private Optional<DataType> processEnumType(DebugInfoEntry die) throws IOException {
 		Optional<String> nameOpt = die.<StringAttributeValue>getAttribute(AttributeName.NAME).map(av -> av.get());
 		Optional<Number> byteSizeOpt = die.<ConstAttributeValue>getAttribute(AttributeName.BYTE_SIZE).map(av -> av.get());
 		Optional<byte[]> elementListOpt = die.<BlockAttributeValue>getAttribute(AttributeName.ELEMENT_LIST).map(av -> av.get());
@@ -241,9 +282,9 @@ public class DWARF1ProgramAnalyzer {
 		DataTypeManager dataTypeManager = program.getDataTypeManager();
 		DataType existingDt = dataTypeManager.getDataType(categoryPath, name);
 		if (existingDt != null) {
-			// already imported
+			// already imported?
 			userDataTypeMap.put(die.getRef(), existingDt);
-			return;
+			return Optional.of(existingDt);
 		}
 		
 		int size = byteSizeOpt.orElse(4).intValue();
@@ -254,6 +295,7 @@ public class DWARF1ProgramAnalyzer {
 
 		DataType newDt = dataTypeManager.addDataType(edt, DataTypeConflictHandler.DEFAULT_HANDLER);
 		userDataTypeMap.put(die.getRef(), newDt);
+		return Optional.of(newDt);
 	}
 	
 	private void processEnumElementList(EnumDataType edt, byte[] encodedElementList, int size) throws IOException {
@@ -296,11 +338,11 @@ public class DWARF1ProgramAnalyzer {
 			}
 			return Optional.ofNullable(ftDt).orElse(DataType.DEFAULT);
 		}
-		if (userDefTypeOpt.isPresent()) {
-			return getUserDataType(userDefTypeOpt.get());
-		}
 		if (modFundTypeOpt.isPresent()) {
 			return decodeModFundType(modFundTypeOpt.get());
+		}
+		if (userDefTypeOpt.isPresent()) {
+			return getUserDataType(userDefTypeOpt.get().get());
 		}
 		if (modUserDefTypeOpt.isPresent()) {
 			return decodeModUserDefType(modUserDefTypeOpt.get());
@@ -341,7 +383,7 @@ public class DWARF1ProgramAnalyzer {
 		} catch (IOException e) {
 			throw new IllegalStateException("Failed to decode mod ud type", e);
 		}
-		DataType baseDt = getUserDataType(new RefAttributeValue(udtRef));
+		DataType baseDt = getUserDataType(udtRef);
 		return applyTypeModifiers(mods, baseDt);
 	}
 	
@@ -357,19 +399,19 @@ public class DWARF1ProgramAnalyzer {
 		return dt;
 	}
 
-	private DataType getUserDataType(RefAttributeValue ref) {
-		var dtOpt = Optional.ofNullable(userDataTypeMap.get(ref.get()));
+	private DataType getUserDataType(long ref) {
+		var dtOpt = Optional.ofNullable(userDataTypeMap.get(ref));
 		if (dtOpt.isEmpty()) {
 			// FIXME: dirty fix, may cause infinite recursion...
-			Optional.ofNullable(dieMap.get(ref.get()))
+			Optional.ofNullable(dieMap.get(ref))
 					.ifPresent(die -> {
-						processDebugInfoEntry(die);
+						processTypeDebugInfoEntry(die);
 					});
 			// try again...
-			dtOpt = Optional.ofNullable(userDataTypeMap.get(ref.get()));
+			dtOpt = Optional.ofNullable(userDataTypeMap.get(ref));
 		}
 		if (dtOpt.isEmpty()) {
-			log.appendMsg("Cannot find user type " + ref);
+			log.appendMsg("Cannot find user type " + Long.toHexString(ref));
 		}
 		return dtOpt.orElse(DataType.DEFAULT);
 	}
@@ -444,6 +486,10 @@ public class DWARF1ProgramAnalyzer {
 		LocationDescription location = decodeLocation(encodedLocation);
 		Long offset = offsetFromLocation(location);
 		//log.appendMsg(name + " " + Long.toHexString(offset));
+		if (offset == 0) {
+			log.appendMsg("Skipping variable with null address: " + name);
+			return;
+		}
 		Address addr = toAddr(offset);
 		try {
 			program.getSymbolTable().createLabel(addr, name, SourceType.IMPORTED);
@@ -458,12 +504,14 @@ public class DWARF1ProgramAnalyzer {
 //			log.appendException(e);
 //		}
 		
-		try {
-			// a bit brutal... there should be an option for clearing
-			program.getListing().clearCodeUnits(addr, addr.add(dt.getLength()), false);
-			program.getListing().createData(addr, dt);
-		} catch (CodeUnitInsertionException | DataTypeConflictException e) {
-			log.appendException(e);
+		if (!dt.isDynamicallySized() && dt.getLength() > 0) {
+			try {
+				// a bit brutal... there should be an option for clearing
+				program.getListing().clearCodeUnits(addr, addr.add(dt.getLength()), false);
+				program.getListing().createData(addr, dt);
+			} catch (CodeUnitInsertionException | DataTypeConflictException e) {
+				log.appendException(e);
+			}
 		}
 	}
 	
