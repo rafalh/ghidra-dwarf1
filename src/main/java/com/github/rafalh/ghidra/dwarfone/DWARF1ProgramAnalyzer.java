@@ -114,7 +114,10 @@ public class DWARF1ProgramAnalyzer {
 			processGlobalVariable(die);
 			break;
 		case GLOBAL_SUBROUTINE:
-			processGlobalSubrountine(die);
+			processSubrountine(die);
+			break;
+		case SUBROUTINE:
+			processSubrountine(die);
 			break;
 		case CLASS_TYPE:
 			processClassType(die);
@@ -457,7 +460,7 @@ public class DWARF1ProgramAnalyzer {
 		}
 	}
 
-	private void processGlobalSubrountine(DebugInfoEntry die) {
+	private void processSubrountine(DebugInfoEntry die) {
 		Optional<StringAttributeValue> nameAttributeOptional = die.getAttribute(AttributeName.NAME);
 		Optional<AddrAttributeValue> lowPcAttributeOptional = die.getAttribute(AttributeName.LOW_PC);
 		Optional<AddrAttributeValue> highPcAttributeOptional = die.getAttribute(AttributeName.HIGH_PC);
