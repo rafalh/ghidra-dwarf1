@@ -42,6 +42,8 @@ import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.StructureDataType;
+import ghidra.program.model.data.Union;
+import ghidra.program.model.data.UnionDataType;
 import ghidra.program.model.listing.Program;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.util.CodeUnitInsertionException;
@@ -145,14 +147,20 @@ public class DWARF1ProgramAnalyzer {
 		try {
 			switch (die.getTag()) {
 			case CLASS_TYPE:
+			case STRUCTURE_TYPE:
 				return processClassType(die);
+			case UNION_TYPE:
+				return processUnionType(die);
 			case ENUMERATION_TYPE:
 				return processEnumType(die);
 			case ARRAY_TYPE:
 				return processArrayType(die);
 			case SUBROUTINE_TYPE:
 				return processSubrountineType(die);
-			// TODO: TYPEDEF
+			case TYPEDEF:
+				// TODO
+				log.appendMsg("Skipping " + die);
+				return Optional.empty();
 			default:
 				// skip other tags
 				return Optional.empty();
@@ -224,12 +232,12 @@ public class DWARF1ProgramAnalyzer {
 	}
 
 	private Optional<DataType> processClassType(DebugInfoEntry die) {
-		Optional<String> nameOpt = die.<StringAttributeValue>getAttribute(AttributeName.NAME).map(av -> av.get());
 		Optional<Number> byteSizeOpt = die.<ConstAttributeValue>getAttribute(AttributeName.BYTE_SIZE).map(av -> av.get());
 		if (byteSizeOpt.isEmpty()) {
+			log.appendMsg("Skipping structure without size " + die);
 			return Optional.empty();
 		}
-		String name = nameOpt
+		String name = extractName(die)
 				// FIXME: anonymous class?
 				.filter(n -> !n.equals("@class"))
 				.orElseGet(() -> "anon_" + die.getRef());
@@ -257,7 +265,6 @@ public class DWARF1ProgramAnalyzer {
 				log.appendMsg("Unexpected child of class type: " + childDie.getTag());
 			}
 		}
-		//sdt.realign();
 		return Optional.of(newDt);
 	}
 	
@@ -267,9 +274,7 @@ public class DWARF1ProgramAnalyzer {
 	}
 
 	private void processClassTypeMember(Structure sdt, DebugInfoEntry die) {
-		String memberName = die.<StringAttributeValue>getAttribute(AttributeName.NAME)
-				.map(StringAttributeValue::get)
-				.orElse(null);
+		String memberName = extractName(die).orElse(null);
 		//log.appendMsg("Member " + childNameOpt);
 		DataType memberDt = extractDataType(die);
 		int memberOffset = extractMemberOffset(die);
@@ -281,12 +286,43 @@ public class DWARF1ProgramAnalyzer {
 		sdt.replaceAtOffset(memberOffset, memberDt, -1, memberName, null);
 	}
 	
+	private Optional<DataType> processUnionType(DebugInfoEntry die) {
+		String name = extractName(die).orElseGet(() -> "anon_" + die.getRef());
+		DataTypeManager dataTypeManager = program.getDataTypeManager();
+		DataType existingDt = dataTypeManager.getDataType(categoryPath, name);
+		if (existingDt != null) {
+			// already imported
+			userDataTypeMap.put(die.getRef(), existingDt);
+			return Optional.of(existingDt);
+		}
+		UnionDataType udt = new UnionDataType(categoryPath, name, dataTypeManager);
+		Union newDt = (Union) dataTypeManager.addDataType(udt, DataTypeConflictHandler.DEFAULT_HANDLER);
+		userDataTypeMap.put(die.getRef(), newDt);
+		//log.appendMsg("Struct " + name);
+		for (DebugInfoEntry childDie : die.getChildren()) {
+			switch (childDie.getTag()) {
+			case MEMBER:
+				processUnionTypeMember(newDt, childDie);
+				break;
+			default:
+				log.appendMsg("Unexpected child of union type: " + childDie.getTag());
+			}
+		}
+		return Optional.of(newDt);
+	}
+
+	private void processUnionTypeMember(Union union, DebugInfoEntry die) {
+		String memberName = extractName(die).orElse(null);
+		//log.appendMsg("Member " + childNameOpt);
+		DataType memberDt = extractDataType(die);
+		union.add(memberDt, memberName, null);
+	}
+	
 	private Optional<DataType> processEnumType(DebugInfoEntry die) throws IOException {
-		Optional<String> nameOpt = die.<StringAttributeValue>getAttribute(AttributeName.NAME).map(av -> av.get());
 		Optional<Number> byteSizeOpt = die.<ConstAttributeValue>getAttribute(AttributeName.BYTE_SIZE).map(av -> av.get());
 		Optional<byte[]> elementListOpt = die.<BlockAttributeValue>getAttribute(AttributeName.ELEMENT_LIST).map(av -> av.get());
 		
-		String name = nameOpt.orElseGet(() -> "anon_" + die.getRef());
+		String name = extractName(die).orElseGet(() -> "anon_" + die.getRef());
 		DataTypeManager dataTypeManager = program.getDataTypeManager();
 		DataType existingDt = dataTypeManager.getDataType(categoryPath, name);
 		if (existingDt != null) {
@@ -314,6 +350,11 @@ public class DWARF1ProgramAnalyzer {
 			String name = br.readNextAsciiString();
 			edt.add(name, value);
 		}
+	}
+	
+	private Optional<String> extractName(DebugInfoEntry die) {
+		return die.<StringAttributeValue>getAttribute(AttributeName.NAME)
+				.map(StringAttributeValue::get);
 	}
 	
 	private int extractMemberOffset(DebugInfoEntry die) {
@@ -484,12 +525,12 @@ public class DWARF1ProgramAnalyzer {
 	}
 	
 	private void processGlobalVariable(DebugInfoEntry die) {
-		Optional<StringAttributeValue> nameAttributeOptional = die.getAttribute(AttributeName.NAME);
+		Optional<String> nameOptional = extractName(die);
 		Optional<BlockAttributeValue> locationAttributeOptional = die.getAttribute(AttributeName.LOCATION);
-		if (nameAttributeOptional.isEmpty() || locationAttributeOptional.isEmpty()) {
+		if (nameOptional.isEmpty() || locationAttributeOptional.isEmpty()) {
 			return;
 		}
-		String name = nameAttributeOptional.get().get();
+		String name = nameOptional.get();
 		byte[] encodedLocation = locationAttributeOptional.get().get();
 		LocationDescription location = decodeLocation(encodedLocation);
 		Long offset = offsetFromLocation(location);
@@ -534,13 +575,13 @@ public class DWARF1ProgramAnalyzer {
 	}
 
 	private void processSubrountine(DebugInfoEntry die) {
-		Optional<StringAttributeValue> nameAttributeOptional = die.getAttribute(AttributeName.NAME);
+		Optional<String> nameOptional = extractName(die);
 		Optional<AddrAttributeValue> lowPcAttributeOptional = die.getAttribute(AttributeName.LOW_PC);
 		Optional<AddrAttributeValue> highPcAttributeOptional = die.getAttribute(AttributeName.HIGH_PC);
-		if (nameAttributeOptional.isEmpty() || lowPcAttributeOptional.isEmpty() || highPcAttributeOptional.isEmpty()) {
+		if (nameOptional.isEmpty() || lowPcAttributeOptional.isEmpty() || highPcAttributeOptional.isEmpty()) {
 			return;
 		}
-		String name = nameAttributeOptional.get().get();
+		String name = nameOptional.get();
 		long lowPc = lowPcAttributeOptional.get().get();
 		//long highPc = highPcAttributeOptional.get().get();
 		//log.appendMsg(name + " " + Long.toHexString(lowPc.longValue()));
