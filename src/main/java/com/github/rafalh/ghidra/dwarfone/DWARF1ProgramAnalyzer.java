@@ -30,7 +30,9 @@ import ghidra.app.util.bin.ByteArrayProvider;
 import ghidra.app.util.bin.ByteProvider;
 import ghidra.app.util.bin.format.dwarf4.next.sectionprovider.ElfSectionProvider;
 import ghidra.app.util.importer.MessageLog;
+import ghidra.program.database.function.OverlappingFunctionException;
 import ghidra.program.model.address.Address;
+import ghidra.program.model.address.AddressSetView;
 import ghidra.program.model.data.BuiltInDataTypeManager;
 import ghidra.program.model.data.CategoryPath;
 import ghidra.program.model.data.DataType;
@@ -44,14 +46,22 @@ import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.Union;
 import ghidra.program.model.data.UnionDataType;
+import ghidra.program.model.listing.Function;
+import ghidra.program.model.listing.Function.FunctionUpdateType;
+import ghidra.program.model.listing.FunctionManager;
+import ghidra.program.model.listing.ParameterImpl;
 import ghidra.program.model.listing.Program;
+import ghidra.program.model.listing.ReturnParameterImpl;
+import ghidra.program.model.listing.Variable;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.util.CodeUnitInsertionException;
+import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
 
 public class DWARF1ProgramAnalyzer {
 	private final Program program;
+	private final AddressSetView set;
 	private final TaskMonitor monitor;
 	private final MessageLog log;
 	private final Map<Long, DataType> userDataTypeMap = new HashMap<>();
@@ -59,8 +69,9 @@ public class DWARF1ProgramAnalyzer {
 	private final List<DebugInfoEntry> dieList = new ArrayList<>();
 	private final Map<Long, DebugInfoEntry> dieMap = new HashMap<>();
 	
-	public DWARF1ProgramAnalyzer(Program program, TaskMonitor monitor, MessageLog log) {
+	public DWARF1ProgramAnalyzer(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log) {
 		this.program = program;
+		this.set = set;
 		this.monitor = monitor;
 		this.log = log;
 		this.categoryPath = new CategoryPath("/DWARF");
@@ -158,8 +169,13 @@ public class DWARF1ProgramAnalyzer {
 			case SUBROUTINE_TYPE:
 				return processSubrountineType(die);
 			case TYPEDEF:
+			case STRING_TYPE:
+			case POINTER_TYPE:
+			case PTR_TO_MEMBER_TYPE:
+			case SET_TYPE:
+			case SUBRANGE_TYPE:
 				// TODO
-				log.appendMsg("Skipping " + die);
+				log.appendMsg("Skipping type: " + die);
 				return Optional.empty();
 			default:
 				// skip other tags
@@ -583,15 +599,58 @@ public class DWARF1ProgramAnalyzer {
 		}
 		String name = nameOptional.get();
 		long lowPc = lowPcAttributeOptional.get().get();
-		//long highPc = highPcAttributeOptional.get().get();
+		long highPc = highPcAttributeOptional.get().get();
 		//log.appendMsg(name + " " + Long.toHexString(lowPc.longValue()));
+
+		Address lowAddr = toAddr(lowPc);
+		Address highAddr = toAddr(highPc);
+//		try {
+//			program.getSymbolTable().createLabel(lowAddr, name, SourceType.IMPORTED);
+//		} catch (InvalidInputException e) {
+//			log.appendException(e);
+//		}
 		
-		//program.getFunctionManager().createFunction(name, addr, null, null)
+		DataType returnDt = extractDataType(die);
+		FunctionManager functionManager = program.getFunctionManager();
 		
-		Address addr = toAddr(lowPc);
+		// TODO: option
+		//program.getListing().clearCodeUnits(lowAddr, highAddr, false);
+		
+		Function fun = functionManager.getFunctionAt(lowAddr);
+		if (fun == null) {
+			try {
+				AddressSetView funSet = set.intersectRange(lowAddr, highAddr);
+				fun = functionManager.createFunction(name, lowAddr, funSet, SourceType.IMPORTED);
+			} catch (InvalidInputException | OverlappingFunctionException e) {
+				log.appendException(e);
+				return;
+			}
+		} else {
+			try {
+				fun.setName(name, SourceType.IMPORTED);
+			} catch (DuplicateNameException | InvalidInputException e) {
+				log.appendException(e);
+			}
+		}
+//		try {
+//			fun.setReturnType(returnDt, SourceType.IMPORTED);
+//		} catch (InvalidInputException e) {
+//			log.appendException(e);
+//		}
+
 		try {
-			program.getSymbolTable().createLabel(addr, name, SourceType.IMPORTED);
-		} catch (InvalidInputException e) {
+			Variable returnParam = new ReturnParameterImpl(returnDt, program);
+			List<Variable> params = new ArrayList<>();
+			for (DebugInfoEntry childDie : die.getChildren()) {
+				if (childDie.getTag() == Tag.FORMAL_PARAMETER) {
+					String paramName = extractName(childDie).orElse(null);
+					DataType dt = extractDataType(childDie);
+					params.add(new ParameterImpl(paramName, dt, program));
+				}
+			}
+		
+			fun.updateFunction(null, returnParam, params, FunctionUpdateType.DYNAMIC_STORAGE_FORMAL_PARAMS, true, SourceType.IMPORTED);
+		} catch (DuplicateNameException | InvalidInputException e) {
 			log.appendException(e);
 		}
 	}

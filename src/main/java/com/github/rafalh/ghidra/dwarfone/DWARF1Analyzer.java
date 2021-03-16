@@ -53,7 +53,7 @@ public class DWARF1Analyzer extends AbstractAnalyzer {
 	public boolean added(Program program, AddressSetView set, TaskMonitor monitor, MessageLog log)
 			throws CancelledException {
 
-		var programAnalyzer = new DWARF1ProgramAnalyzer(program, monitor, log);
+		var programAnalyzer = new DWARF1ProgramAnalyzer(program, set, monitor, log);
 		programAnalyzer.process();
 		return true;
 	}
