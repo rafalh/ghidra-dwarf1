@@ -39,7 +39,7 @@ public class DWARF1Analyzer extends AbstractAnalyzer {
 	@Override
 	public boolean canAnalyze(Program program) {
 		var sectionProvider = ElfSectionProvider.createSectionProviderFor(program);
-		return sectionProvider.hasSection(SectionNames.DEBUG);
+		return sectionProvider.hasSection(DWARF1SectionNames.DEBUG);
 	}
 
 	@Override
