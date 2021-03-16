@@ -40,6 +40,7 @@ import ghidra.program.model.data.DataTypeConflictException;
 import ghidra.program.model.data.DataTypeConflictHandler;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.EnumDataType;
+import ghidra.program.model.data.Pointer;
 import ghidra.program.model.data.PointerDataType;
 import ghidra.program.model.data.ArrayDataType;
 import ghidra.program.model.data.Structure;
@@ -594,9 +595,11 @@ public class DWARF1ProgramAnalyzer {
 		Optional<String> nameOptional = extractName(die);
 		Optional<AddrAttributeValue> lowPcAttributeOptional = die.getAttribute(AttributeName.LOW_PC);
 		Optional<AddrAttributeValue> highPcAttributeOptional = die.getAttribute(AttributeName.HIGH_PC);
+		
 		if (nameOptional.isEmpty() || lowPcAttributeOptional.isEmpty() || highPcAttributeOptional.isEmpty()) {
 			return;
 		}
+		
 		String name = nameOptional.get();
 		long lowPc = lowPcAttributeOptional.get().get();
 		long highPc = highPcAttributeOptional.get().get();
@@ -609,6 +612,13 @@ public class DWARF1ProgramAnalyzer {
 //		} catch (InvalidInputException e) {
 //			log.appendException(e);
 //		}
+		
+		// Prefix name with the class name if this is a member function
+		Optional<DataType> classDtOpt = determineMemberClassType(die);
+		if (classDtOpt.isPresent() && !name.contains(classDtOpt.get().getName())) {
+			name = classDtOpt.get().getName() + "::" + name;
+		}
+		
 		
 		DataType returnDt = extractDataType(die);
 		FunctionManager functionManager = program.getFunctionManager();
@@ -655,6 +665,30 @@ public class DWARF1ProgramAnalyzer {
 		}
 	}
 	
+	private Optional<DataType> determineMemberClassType(DebugInfoEntry die) {
+		// Function defined in class body
+		if (die.getParent().getTag() == Tag.CLASS_TYPE) {
+			return Optional.of(getUserDataType(die.getParent().getRef()));
+		}
+		// Function defined outside of the class body should have AT_member attribute
+		Optional<RefAttributeValue> memberAttributeOptional = die.getAttribute(AttributeName.MEMBER);
+		if (memberAttributeOptional.isPresent()) {
+			return Optional.of(getUserDataType(memberAttributeOptional.get().get()));
+		}
+		// Determine the class based on the "this" parameter because for some compilers (e.g. PS2) normal
+		// ways does not work...
+		for (DebugInfoEntry childDie : die.getChildren()) {
+			if (childDie.getTag() == Tag.FORMAL_PARAMETER && Optional.of("this").equals(extractName(childDie))) {
+				DataType dt = extractDataType(childDie);
+				if (dt instanceof Pointer) {
+					dt = ((Pointer) dt).getDataType();
+				}
+				return Optional.of(dt);
+			}
+		}
+		return Optional.empty();
+	}
+
 	private final Address toAddr(Number offset) {
 		return program.getAddressFactory().getDefaultAddressSpace().getAddress(
 			offset.longValue(), true);

@@ -65,6 +65,13 @@ public class DebugInfoEntry {
 		return Optional.ofNullable((T) attributes.get(name));
 	}
 	
+	@SuppressWarnings("unchecked")
+	public <T extends AttributeValue> Optional<T> getAttribute(int name) {
+		return Optional.ofNullable(
+				Optional.ofNullable((T) attributes.get(AttributeName.decode(name)))
+				.orElseGet(() -> (T) userAttributes.get(name)));
+	}
+	
 	public DebugInfoEntry getParent() {
 		return parent;
 	}
