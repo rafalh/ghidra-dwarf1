@@ -106,9 +106,10 @@ public class DWARF1TypeImporter {
 			} else if (fmt == Format.FT_C_C) {
 				// type of index - unused
 				FundamentalType.fromValue(br.readNextUnsignedShort());
-				int begin = br.readNextInt();
-				int end = br.readNextInt();
-				dims.add(end - begin);
+				int minIndex = br.readNextInt();
+				int maxIndex = br.readNextInt();
+				int numElements = maxIndex - minIndex + 1;
+				dims.add(numElements);
 			} else {
 				log.appendMsg("Unsupported format " + fmt + " in " + die);
 				break;
