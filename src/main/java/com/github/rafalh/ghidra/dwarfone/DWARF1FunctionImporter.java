@@ -1,6 +1,7 @@
 package com.github.rafalh.ghidra.dwarfone;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
 
@@ -55,9 +56,6 @@ public class DWARF1FunctionImporter {
 		long highPc = highPcAttributeOptional.get().get();
 		//log.appendMsg(name + " " + Long.toHexString(lowPc.longValue()));
 
-		Address lowAddr = dwarfProgram.toAddr(lowPc);
-		Address highAddr = dwarfProgram.toAddr(highPc);
-		
 		// Prefix name with the class name if this is a member function
 		Optional<DataType> classDtOpt = determineMemberClassType(die);
 		if (classDtOpt.isPresent() && !name.contains(classDtOpt.get().getName())) {
@@ -66,13 +64,24 @@ public class DWARF1FunctionImporter {
 		
 		DataType returnDt = typeExtractor.extractDataType(die);
 		
-		Function fun = functionManager.getFunctionAt(lowAddr);
+		Address minAddr = dwarfProgram.toAddr(lowPc);
+		Address maxAddr = dwarfProgram.toAddr(highPc - 1);
+		AddressSetView funBody = dwarfProgram.getProgram().getAddressFactory().getAddressSet(minAddr, maxAddr);
+		Iterator<Function> overlappingFunIt = functionManager.getFunctionsOverlapping(funBody);
+		while (overlappingFunIt.hasNext()) {
+			Function overlappingFun = overlappingFunIt.next();
+			if (!overlappingFun.getEntryPoint().equals(minAddr)) {
+				log.appendMsg("Removing overlapping function: " + overlappingFun.getName());
+				functionManager.removeFunction(overlappingFun.getEntryPoint());
+			}
+		}
+		Function fun = functionManager.getFunctionAt(minAddr);
 		try {
 			if (fun == null) {
-				AddressSetView funSet = dwarfProgram.getSet().intersectRange(lowAddr, highAddr);
-				fun = functionManager.createFunction(name, lowAddr, funSet, SourceType.IMPORTED);
+				fun = functionManager.createFunction(name, minAddr, funBody, SourceType.IMPORTED);
 			} else {
 				fun.setName(name, SourceType.IMPORTED);
+				fun.setBody(funBody);
 			}
 			
 			Variable returnParam = new ReturnParameterImpl(returnDt, dwarfProgram.getProgram());

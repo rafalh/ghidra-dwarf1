@@ -175,7 +175,7 @@ public class DWARF1TypeImporter {
 
 	private void processClassTypeMember(Structure sdt, DebugInfoEntry die) {
 		String memberName = DWARF1ImportUtils.extractName(die).orElse(null);
-		//log.appendMsg("Member " + childNameOpt);
+		//log.appendMsg("Member " + memberName);
 		DataType memberDt = typeExtractor.extractDataType(die);
 		int memberOffset = extractMemberOffset(die);
 		assert memberDt != null;
