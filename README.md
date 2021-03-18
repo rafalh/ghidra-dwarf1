@@ -4,8 +4,8 @@ GHIDRA DWARF1 Extension
 This extension adds DWARF1 analyzer to Ghidra (built-in Ghidra DWARF analyzer does not support this version of DWARF
 debug format).
 
-I made this extension in a short time because I neeed something to help me analyze PS2 game binaries. It may not work
-with other files, probably have some bugs and is very incomplete. Use it on your own risk. I suggest making a backup
+I made this extension in a short time because I needed something to help me analyze PS2 game binaries. It may not work
+with other files, probably has some bugs and is very incomplete. Use it on your own risk. I suggest making a backup
 of your Ghidra database before using it.
 
 Usage
