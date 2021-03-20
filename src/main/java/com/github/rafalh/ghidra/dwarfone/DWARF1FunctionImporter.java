@@ -90,13 +90,19 @@ public class DWARF1FunctionImporter {
 		long lowPc = lowPcAttributeOptional.get().get();
 		long highPc = highPcAttributeOptional.get().get();
 		//log.appendMsg(name + " " + Long.toHexString(lowPc.longValue()));
-		
+		DataType returnDt = typeExtractor.extractDataType(die);
+
 		String op = OPERATORS.get(name);
 		if (op != null) {
-			String sep = Character.isLetter(op.charAt(0)) ? " " : "";
+			// Note: symbol name cannot contain spaces
+			String sep = Character.isLetter(op.charAt(0)) ? "_" : "";
 			name = "operator" + sep + op;
 		}
-
+		if (name.startsWith("__op")) {
+			// Cast operator
+			name = "operator_" + returnDt.toString().replace(' ', '_');
+		}
+		
 		// Prefix name with the class name if this is a member function
 		Optional<DataType> classDtOpt = determineMemberClassType(die);
 		if (classDtOpt.isPresent() && !name.contains(classDtOpt.get().getName())) {
@@ -108,8 +114,6 @@ public class DWARF1FunctionImporter {
 			}
 			name = className + "::" + name;
 		}
-		
-		DataType returnDt = typeExtractor.extractDataType(die);
 		
 		Address minAddr = dwarfProgram.toAddr(lowPc);
 		Address maxAddr = dwarfProgram.toAddr(highPc - 1);
