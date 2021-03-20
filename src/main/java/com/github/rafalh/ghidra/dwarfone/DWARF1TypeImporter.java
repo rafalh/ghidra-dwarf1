@@ -82,9 +82,9 @@ public class DWARF1TypeImporter {
 	}
 	
 	private Optional<DataType> processSubrountineType(DebugInfoEntry die) {
-		// TODO
-		var dt = new PointerDataType(DataType.VOID);
-		dwarfTypeManager.registerType(die.getRef(), dt);
+		// Note: this is a function type, not a pointer to function type
+		var dt = DataType.DEFAULT;
+		dwarfTypeManager.registerType(die.getRef(), dt); // TODO
 		return Optional.of(dt);
 	}
 
