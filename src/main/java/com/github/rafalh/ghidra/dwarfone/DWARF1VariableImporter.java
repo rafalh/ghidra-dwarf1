@@ -59,10 +59,10 @@ public class DWARF1VariableImporter {
 		}
 		// Set data type
 		DataType dt = typeExtractor.extractDataType(die);
-		if (!dt.isDynamicallySized() && dt.getLength() > 0 && dt != DataType.DEFAULT) {
+		if (dt.getLength() > 0 && dt != DataType.DEFAULT) {
 			try {
 				// a bit brutal... there should be an option for clearing
-				dwarfProgram.getProgram().getListing().clearCodeUnits(addr, addr.add(dt.getLength()), false);
+				dwarfProgram.getProgram().getListing().clearCodeUnits(addr, addr.add(dt.getLength() - 1), false);
 				dwarfProgram.getProgram().getListing().createData(addr, dt);
 			} catch (CodeUnitInsertionException | DataTypeConflictException e) {
 				log.appendException(e);

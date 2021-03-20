@@ -108,7 +108,7 @@ public class DWARF1TypeImporter {
 		DataTypeManager dtMgr = program.getDataTypeManager();
 		DataType funDt = dtMgr.getDataType(categoryPath, funDtName);
 		if (funDt == null || !(funDt instanceof FunctionDefinition)) {
-			FunctionDefinitionDataType funDefDt = new FunctionDefinitionDataType(categoryPath, funDtName);
+			FunctionDefinitionDataType funDefDt = new FunctionDefinitionDataType(categoryPath, funDtName, dtMgr);
 			funDefDt.setReturnType(returnDt);
 			funDefDt.setArguments(params.toArray(new ParameterDefinition[params.size()]));
 			funDt = dtMgr.addDataType(funDefDt, DataTypeConflictHandler.DEFAULT_HANDLER);
@@ -154,7 +154,7 @@ public class DWARF1TypeImporter {
 				log.appendMsg("Bad array dim " + dim + " in " + die);
 				return Optional.empty();
 			}
-			dt = new ArrayDataType(dt, dim, -1);
+			dt = new ArrayDataType(dt, dim, -1, program.getDataTypeManager());
 		}
 		dwarfTypeManager.registerType(die.getRef(), dt);
 		return Optional.of(dt);
@@ -261,7 +261,7 @@ public class DWARF1TypeImporter {
 		}
 		
 		int size = byteSizeOpt.orElse(4).intValue();
-		var edt = new EnumDataType(categoryPath, name, size);
+		var edt = new EnumDataType(categoryPath, name, size, dataTypeManager);
 		if (elementListOpt.isPresent()) {
 			processEnumElementList(edt, elementListOpt.get(), size);
 		}
