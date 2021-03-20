@@ -3,6 +3,7 @@ package com.github.rafalh.ghidra.dwarfone;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import com.github.rafalh.ghidra.dwarfone.model.AddrAttributeValue;
@@ -28,6 +29,40 @@ import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.InvalidInputException;
 
 public class DWARF1FunctionImporter {
+	
+	private static final Map<String, String> OPERATORS = Map.ofEntries(
+			Map.entry("__pl", "+"),
+			Map.entry("__apl", "+="),
+			Map.entry("__mi", "-"),
+			Map.entry("__ami", "-="),
+			Map.entry("__ml", "*"),
+			Map.entry("__amu", "*="),
+			Map.entry("__dv", "/"),
+			Map.entry("__adv", "/="),
+			Map.entry("__as", "="),
+			Map.entry("__pp", "++"),
+			Map.entry("__lt", "<"),
+			Map.entry("__gt", ">"),
+			Map.entry("__le", "<="),
+			Map.entry("__ge", ">="),
+			Map.entry("__eq", "=="),
+			Map.entry("__ne", "!="),
+			Map.entry("__ls", "<<"),
+			Map.entry("__als", "<<="),
+			Map.entry("__rs", ">>"),
+			Map.entry("__ars", ">>="),
+			Map.entry("__er", "^"),
+			Map.entry("__aer", "^="),
+			Map.entry("__vc", "[]"),
+			Map.entry("__cl", "()"),
+			Map.entry("__nw", "new"),
+			Map.entry("__nwa", "new[]"),
+			Map.entry("__dl", "delete"),
+			Map.entry("__dla", "delete[]")
+	);
+	private static final String CONSTRUCTOR = "__ct";
+	private static final String DESTRUCTOR = "__dt";
+	
 	private final DWARF1Program dwarfProgram;
 	private final MessageLog log;
 	private final DWARF1TypeManager dwarfTypeManager;
@@ -55,11 +90,23 @@ public class DWARF1FunctionImporter {
 		long lowPc = lowPcAttributeOptional.get().get();
 		long highPc = highPcAttributeOptional.get().get();
 		//log.appendMsg(name + " " + Long.toHexString(lowPc.longValue()));
+		
+		String op = OPERATORS.get(name);
+		if (op != null) {
+			String sep = Character.isLetter(op.charAt(0)) ? " " : "";
+			name = "operator" + sep + op;
+		}
 
 		// Prefix name with the class name if this is a member function
 		Optional<DataType> classDtOpt = determineMemberClassType(die);
 		if (classDtOpt.isPresent() && !name.contains(classDtOpt.get().getName())) {
-			name = classDtOpt.get().getName() + "::" + name;
+			String className = classDtOpt.get().getName();
+			if (name.equals(CONSTRUCTOR)) {
+				name = className;
+			} else if (name.equals(DESTRUCTOR)) {
+				name = "~" + className;
+			}
+			name = className + "::" + name;
 		}
 		
 		DataType returnDt = typeExtractor.extractDataType(die);
