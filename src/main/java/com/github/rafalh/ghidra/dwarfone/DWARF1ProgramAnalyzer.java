@@ -96,14 +96,10 @@ public class DWARF1ProgramAnalyzer {
 		try {
 			switch (die.getTag()) {
 			case GLOBAL_VARIABLE:
-				dwarfVariableImporter.processGlobalVariable(die);
-				break;
 			case LOCAL_VARIABLE:
-				dwarfVariableImporter.processLocalVariable(die);
+				dwarfVariableImporter.processVariable(die);
 				break;
 			case GLOBAL_SUBROUTINE:
-				dwarfFunctionImporter.processSubrountine(die);
-				break;
 			case SUBROUTINE:
 				dwarfFunctionImporter.processSubrountine(die);
 				break;

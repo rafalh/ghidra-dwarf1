@@ -26,7 +26,7 @@ public class DWARF1VariableImporter {
 		this.typeExtractor = typeExtractor;
 	}
 	
-	void processGlobalVariable(DebugInfoEntry die) {
+	void processVariable(DebugInfoEntry die) {
 		Optional<String> nameOptional = DWARF1ImportUtils.extractName(die);
 		Optional<LocationDescription> locationOptional = DWARF1ImportUtils.extractLocation(die, dwarfProgram);
 		if (nameOptional.isEmpty() || locationOptional.isEmpty()) {
@@ -34,19 +34,30 @@ public class DWARF1VariableImporter {
 		}
 		String name = nameOptional.get();
 		LocationDescription location = locationOptional.get();
-		Long offset = offsetFromLocation(location);
+		Optional<Long> offsetOpt = offsetFromLocation(location);
+		// Note: local variables may have static address in which case we want to import them
+		if (offsetOpt.isEmpty()) {
+			return;
+		}
+		Long offset = offsetOpt.get();
 		//log.appendMsg(name + " " + Long.toHexString(offset));
 		if (offset == 0) {
 			log.appendMsg("Skipping variable with null address: " + name);
 			return;
 		}
+		// To avoid having static variables with a duplicated name append an offset to the name
+		// Note: prefixing variable with function name or file name would not be enough - local variables have block scope
+		if (die.getTag() == Tag.LOCAL_VARIABLE) {
+			name += "_" + Long.toHexString(offset);
+		}
+		// Create symbol
 		Address addr = dwarfProgram.toAddr(offset);
 		try {
 			dwarfProgram.getProgram().getSymbolTable().createLabel(addr, name, SourceType.IMPORTED);
 		} catch (InvalidInputException e) {
 			log.appendException(e);
 		}
-		
+		// Set data type
 		DataType dt = typeExtractor.extractDataType(die);
 		if (!dt.isDynamicallySized() && dt.getLength() > 0 && dt != DataType.DEFAULT) {
 			try {
@@ -58,22 +69,13 @@ public class DWARF1VariableImporter {
 			}
 		}
 	}
-
-	void processLocalVariable(DebugInfoEntry die) {
-		if (die.getParent().getTag() != Tag.COMPILE_UNIT) {
-			// ignore parameters and local variables
-			// we are only interested in static variables
-			return;
-		}
-		processGlobalVariable(die);
-	}
 	
-	private Long offsetFromLocation(LocationDescription location) {
+	private Optional<Long> offsetFromLocation(LocationDescription location) {
 		var locationAtoms = location.getAtoms();
 		if (locationAtoms.size() == 1 && locationAtoms.get(0).getOp() == LocationAtomOp.ADDR) {
-			return locationAtoms.get(0).getArg();
+			return Optional.of(locationAtoms.get(0).getArg());
 		}
-		log.appendMsg("Complex location not supported: " + locationAtoms);
-		return null;
+		//log.appendMsg("Complex location not supported: " + locationAtoms);
+		return Optional.empty();
 	}
 }

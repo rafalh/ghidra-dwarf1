@@ -37,6 +37,9 @@ public class LocationDescription {
 				break;
 			}
 			atoms.add(new LocationAtom(op, arg));
+			if (op == LocationAtomOp.USER) {
+				break;
+			}
 		}
 		return new LocationDescription(atoms);
 	}
