@@ -121,7 +121,8 @@ public class DWARF1TypeExtractor {
 		while (it.hasPrevious()) {
 			TypeModifier mod = it.previous();
 			if (mod == TypeModifier.POINTER_TO || mod == TypeModifier.REFERENCE_TO) {
-				dt = new PointerDataType(dt);
+				int pointerSize = program.getDataTypeManager().getDataOrganization().getPointerSize();
+				dt = new PointerDataType(dt, pointerSize);
 			}
 		}
 		return dt;
