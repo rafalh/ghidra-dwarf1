@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import com.github.rafalh.ghidra.dwarfone.model.AttributeName;
 import com.github.rafalh.ghidra.dwarfone.model.AttributeUtils;
@@ -17,6 +18,7 @@ import com.github.rafalh.ghidra.dwarfone.model.Format;
 import com.github.rafalh.ghidra.dwarfone.model.FundamentalType;
 import com.github.rafalh.ghidra.dwarfone.model.LocationAtomOp;
 import com.github.rafalh.ghidra.dwarfone.model.LocationDescription;
+import com.github.rafalh.ghidra.dwarfone.model.Tag;
 
 import ghidra.app.util.bin.BinaryReader;
 import ghidra.app.util.bin.ByteArrayProvider;
@@ -27,6 +29,10 @@ import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.DataTypeConflictHandler;
 import ghidra.program.model.data.DataTypeManager;
 import ghidra.program.model.data.EnumDataType;
+import ghidra.program.model.data.FunctionDefinition;
+import ghidra.program.model.data.FunctionDefinitionDataType;
+import ghidra.program.model.data.ParameterDefinition;
+import ghidra.program.model.data.ParameterDefinitionImpl;
 import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.Union;
@@ -82,9 +88,33 @@ public class DWARF1TypeImporter {
 	
 	private Optional<DataType> processSubrountineType(DebugInfoEntry die) {
 		// Note: this is a function type, not a pointer to function type
-		var dt = DataType.DEFAULT;
-		dwarfTypeManager.registerType(die.getRef(), dt); // TODO
-		return Optional.of(dt);
+		DataType returnDt = typeExtractor.extractDataType(die);
+		List<ParameterDefinition> params = new ArrayList<>();
+		for (DebugInfoEntry childDie : die.getChildren()) {
+			if (childDie.getTag() == Tag.FORMAL_PARAMETER) {
+				String paramName = DWARF1ImportUtils.extractName(childDie).orElse(null);
+				DataType dt = typeExtractor.extractDataType(childDie);
+				params.add(new ParameterDefinitionImpl(paramName, dt, null));
+			}
+		}
+		var paramsStr = params.stream()
+				.map(ParameterDefinition::toString)
+				.collect(Collectors.joining(", "));
+		if (paramsStr.isEmpty()) {
+			paramsStr = "void";
+		}
+		var funDtName = returnDt.toString() + "(" + paramsStr + ")";
+		// check if type already exists
+		DataTypeManager dtMgr = program.getDataTypeManager();
+		DataType funDt = dtMgr.getDataType(categoryPath, funDtName);
+		if (funDt == null || !(funDt instanceof FunctionDefinition)) {
+			FunctionDefinitionDataType funDefDt = new FunctionDefinitionDataType(categoryPath, funDtName);
+			funDefDt.setReturnType(returnDt);
+			funDefDt.setArguments(params.toArray(new ParameterDefinition[params.size()]));
+			funDt = dtMgr.addDataType(funDefDt, DataTypeConflictHandler.DEFAULT_HANDLER);
+		}
+		dwarfTypeManager.registerType(die.getRef(), funDt);
+		return Optional.of(funDt);
 	}
 
 	private Optional<DataType> processArrayType(DebugInfoEntry die) throws IOException {
