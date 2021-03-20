@@ -48,8 +48,7 @@ public class DWARF1VariableImporter {
 		}
 		
 		DataType dt = typeExtractor.extractDataType(die);
-		
-		if (!dt.isDynamicallySized() && dt.getLength() > 0) {
+		if (!dt.isDynamicallySized() && dt.getLength() > 0 && dt != DataType.DEFAULT) {
 			try {
 				// a bit brutal... there should be an option for clearing
 				dwarfProgram.getProgram().getListing().clearCodeUnits(addr, addr.add(dt.getLength()), false);
