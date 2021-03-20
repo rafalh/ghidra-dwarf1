@@ -13,6 +13,6 @@ public class RefAttributeValue implements AttributeValue {
 	
 	@Override
 	public String toString() {
-		return "ref(" + offset + ")";
+		return "ref(" + Long.toHexString(offset) + ")";
 	}
 }

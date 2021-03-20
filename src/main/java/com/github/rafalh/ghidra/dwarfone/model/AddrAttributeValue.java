@@ -13,6 +13,6 @@ public class AddrAttributeValue implements AttributeValue {
 	
 	@Override
 	public String toString() {
-		return "addr(" + Long.toString(addr) + ")";
+		return "addr(" + Long.toHexString(addr) + ")";
 	}
 }
