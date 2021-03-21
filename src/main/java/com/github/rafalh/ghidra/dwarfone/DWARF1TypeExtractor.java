@@ -46,7 +46,7 @@ public class DWARF1TypeExtractor {
 		if (fundTypeOpt.isPresent()) {
 			var ftDt = dwarfTypeManager.convertFundamentalTypeToDataType(fundTypeOpt.get());
 			if (ftDt == null) {
-				log.appendMsg("failed to map ft to dt: " + fundTypeOpt.get());
+				log.appendMsg("Failed to map ft to dt: " + fundTypeOpt.get());
 			}
 			return Optional.ofNullable(ftDt).orElse(DataType.DEFAULT);
 		}

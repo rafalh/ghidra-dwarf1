@@ -28,13 +28,8 @@ public class DWARF1TypeManager {
 	DataType getUserDataType(long ref) {
 		var dtOpt = Optional.ofNullable(userDataTypeMap.get(ref));
 		if (dtOpt.isEmpty()) {
-			// FIXME: dirty fix, may cause infinite recursion...
-			Optional.ofNullable(program.getDebugInfoEntry(ref))
-					.ifPresent(die -> {
-						dwarfTypeImporter.processTypeDebugInfoEntry(die);
-					});
-			// try again...
-			dtOpt = Optional.ofNullable(userDataTypeMap.get(ref));
+			dtOpt = Optional.ofNullable(program.getDebugInfoEntry(ref))
+					.flatMap(dwarfTypeImporter::processTypeDebugInfoEntry);
 		}
 		if (dtOpt.isEmpty()) {
 			log.appendMsg("Cannot find user type " + Long.toHexString(ref));

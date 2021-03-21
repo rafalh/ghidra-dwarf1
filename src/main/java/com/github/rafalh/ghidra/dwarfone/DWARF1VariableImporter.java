@@ -42,7 +42,7 @@ public class DWARF1VariableImporter {
 		Long offset = offsetOpt.get();
 		//log.appendMsg(name + " " + Long.toHexString(offset));
 		if (offset == 0) {
-			log.appendMsg("Skipping variable with null address: " + name);
+			//log.appendMsg("Skipping variable with null address: " + name);
 			return;
 		}
 		// To avoid having static variables with a duplicated name append an offset to the name

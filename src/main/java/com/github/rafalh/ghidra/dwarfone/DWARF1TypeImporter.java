@@ -79,6 +79,7 @@ public class DWARF1TypeImporter {
 				return Optional.empty();
 			default:
 				// skip other tags
+				log.appendMsg("Expected type tag in " + die);
 				return Optional.empty();
 			}
 		} catch (Exception e) {
@@ -145,14 +146,20 @@ public class DWARF1TypeImporter {
 			}
 		}
 		if (baseDt == null) {
+			log.appendMsg("Missing array element type information in " + die);
 			return Optional.empty();
 		}
 		DataType dt = baseDt;
 		Collections.reverse(dims);
 		for (int dim : dims) {
-			if (dim <= 0) {
-				log.appendMsg("Bad array dim " + dim + " in " + die);
+			if (dim < 0) {
+				log.appendMsg("Bad array dimension " + dim + " in " + die);
 				return Optional.empty();
+			}
+			if (dim == 0) {
+				// Ghidra does not support array data type with length 0 so return it as void type, which has zero size
+				dt = DataType.VOID;
+				break;
 			}
 			dt = new ArrayDataType(dt, dim, -1, program.getDataTypeManager());
 		}
