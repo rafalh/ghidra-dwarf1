@@ -4,6 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
+import com.github.rafalh.ghidra.dwarfone.model.DebugInfoEntry;
 import com.github.rafalh.ghidra.dwarfone.model.FundamentalType;
 
 import ghidra.app.util.importer.MessageLog;
@@ -25,19 +26,23 @@ public class DWARF1TypeManager {
 		this.log = log;
 	}
 	
-	DataType getUserDataType(long ref) {
-		var dtOpt = Optional.ofNullable(userDataTypeMap.get(ref));
-		if (dtOpt.isEmpty()) {
-			dtOpt = Optional.ofNullable(program.getDebugInfoEntry(ref))
-					.flatMap(dwarfTypeImporter::processTypeDebugInfoEntry);
+	public DataType getUserDataType(long ref) {
+		var cachedDtOpt = Optional.ofNullable(userDataTypeMap.get(ref));
+		if (cachedDtOpt.isPresent()) {
+			return cachedDtOpt.get();
 		}
-		if (dtOpt.isEmpty()) {
-			log.appendMsg("Cannot find user type " + Long.toHexString(ref));
+		try {
+			DebugInfoEntry die = program.getDebugInfoEntry(ref)
+					.orElseThrow(() -> new IllegalArgumentException("Cannot find DIE for reference " + ref));
+			return dwarfTypeImporter.processTypeDebugInfoEntry(die);
+		} catch (Exception e) {
+			log.appendMsg("Failed to resolve type reference: " + ref);
+			log.appendException(e);
+			return DataType.DEFAULT;
 		}
-		return dtOpt.orElse(DataType.DEFAULT);
 	}
 	
-	DataType convertFundamentalTypeToDataType(FundamentalType ft) {
+	public DataType convertFundamentalTypeToDataType(FundamentalType ft) {
 		DataTypeManager dataTypeManager = BuiltInDataTypeManager.getDataTypeManager();
 		switch (ft) {
 		case CHAR:
@@ -74,6 +79,7 @@ public class DWARF1TypeManager {
 		case BOOLEAN:
 			return dataTypeManager.getDataType(CategoryPath.ROOT, "bool");
 		default:
+			log.appendMsg("Unknown fundamental type: " + ft);
 			return DataType.DEFAULT;
 		}
 	}
@@ -85,5 +91,4 @@ public class DWARF1TypeManager {
 	public void setTypeImporter(DWARF1TypeImporter dwarfTypeImporter) {
 		this.dwarfTypeImporter = dwarfTypeImporter;
 	}
-	
 }

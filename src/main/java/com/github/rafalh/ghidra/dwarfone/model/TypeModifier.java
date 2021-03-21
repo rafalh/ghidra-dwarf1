@@ -1,6 +1,7 @@
 package com.github.rafalh.ghidra.dwarfone.model;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -32,10 +33,7 @@ public enum TypeModifier {
 		if (value >= LO_USER && value <= HI_USER) {
 			return USER;
 		}
-		TypeModifier mod = VALUE_MAP.get(value);
-		if (mod == null) {
-			throw new IllegalArgumentException("invalid mod value " + value);
-		}
-		return mod;
+		return Optional.ofNullable(VALUE_MAP.get(value))
+				.orElseThrow(() -> new IllegalArgumentException("invalid mod value " + value));
 	}
 }

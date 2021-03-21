@@ -54,7 +54,7 @@ public class DWARF1TypeImporter {
 		this.categoryPath = new CategoryPath("/DWARF");
 	}
 	
-	Optional<DataType> processTypeDebugInfoEntry(DebugInfoEntry die) {
+	DataType processTypeDebugInfoEntry(DebugInfoEntry die) {
 		try {
 			switch (die.getTag()) {
 			case CLASS_TYPE:
@@ -75,19 +75,17 @@ public class DWARF1TypeImporter {
 			case SET_TYPE:
 			case SUBRANGE_TYPE:
 				// TODO
-				log.appendMsg("Skipping type: " + die);
-				return Optional.empty();
+				throw new IllegalArgumentException("Unsupported debug info entry tag: " + die.getTag());
 			default:
 				// skip other tags
-				log.appendMsg("Expected type tag in " + die);
-				return Optional.empty();
+				throw new IllegalArgumentException("Expected type tag, got " + die.getTag());
 			}
 		} catch (Exception e) {
 			throw new RuntimeException("Failed to process type debug info entry " + die, e);
 		}
 	}
 	
-	private Optional<DataType> processSubrountineType(DebugInfoEntry die) {
+	private DataType processSubrountineType(DebugInfoEntry die) {
 		// Note: this is a function type, not a pointer to function type
 		DataType returnDt = typeExtractor.extractDataType(die);
 		List<ParameterDefinition> params = new ArrayList<>();
@@ -115,10 +113,10 @@ public class DWARF1TypeImporter {
 			funDt = dtMgr.addDataType(funDefDt, DataTypeConflictHandler.DEFAULT_HANDLER);
 		}
 		dwarfTypeManager.registerType(die.getRef(), funDt);
-		return Optional.of(funDt);
+		return funDt;
 	}
 
-	private Optional<DataType> processArrayType(DebugInfoEntry die) throws IOException {
+	private DataType processArrayType(DebugInfoEntry die) throws IOException {
 		byte[] subscrData = die.<BlockAttributeValue>getAttribute(AttributeName.SUBSCR_DATA)
 				.map(av -> av.get())
 				.orElseThrow(() -> new IllegalArgumentException("array type without subscr_data " + die));
@@ -146,15 +144,13 @@ public class DWARF1TypeImporter {
 			}
 		}
 		if (baseDt == null) {
-			log.appendMsg("Missing array element type information in " + die);
-			return Optional.empty();
+			throw new IllegalArgumentException("Missing array element type information");
 		}
 		DataType dt = baseDt;
 		Collections.reverse(dims);
 		for (int dim : dims) {
 			if (dim < 0) {
-				log.appendMsg("Bad array dimension " + dim + " in " + die);
-				return Optional.empty();
+				throw new IllegalArgumentException("Bad array dimension: " + dim);
 			}
 			if (dim == 0) {
 				// Ghidra does not support array data type with length 0 so return it as void type, which has zero size
@@ -164,14 +160,13 @@ public class DWARF1TypeImporter {
 			dt = new ArrayDataType(dt, dim, -1, program.getDataTypeManager());
 		}
 		dwarfTypeManager.registerType(die.getRef(), dt);
-		return Optional.of(dt);
+		return dt;
 	}
 
-	private Optional<DataType> processClassType(DebugInfoEntry die) {
+	private DataType processClassType(DebugInfoEntry die) {
 		Optional<Number> byteSizeOpt = die.<ConstAttributeValue>getAttribute(AttributeName.BYTE_SIZE).map(av -> av.get());
 		if (byteSizeOpt.isEmpty()) {
-			log.appendMsg("Skipping structure without size " + die);
-			return Optional.empty();
+			throw new IllegalArgumentException("class type is missing byte size attribute");
 		}
 		String name = DWARF1ImportUtils.extractName(die)
 				// FIXME: anonymous class?
@@ -183,10 +178,11 @@ public class DWARF1TypeImporter {
 		if (existingDt != null) {
 			// already imported
 			dwarfTypeManager.registerType(die.getRef(), existingDt);
-			return Optional.of(existingDt);
+			return existingDt;
 		}
-		StructureDataType sdt = new StructureDataType(categoryPath, name, size, dataTypeManager);
-		Structure newDt = (Structure) dataTypeManager.addDataType(sdt, DataTypeConflictHandler.DEFAULT_HANDLER);
+		StructureDataType tempDt = new StructureDataType(categoryPath, name, size, dataTypeManager);
+		// Register the type before importing fields because field can reference parent type
+		Structure newDt = (Structure) dataTypeManager.addDataType(tempDt, DataTypeConflictHandler.DEFAULT_HANDLER);
 		dwarfTypeManager.registerType(die.getRef(), newDt);
 		//log.appendMsg("Struct " + name);
 		for (DebugInfoEntry childDie : die.getChildren()) {
@@ -201,7 +197,7 @@ public class DWARF1TypeImporter {
 				log.appendMsg("Unexpected child of class type: " + childDie.getTag());
 			}
 		}
-		return Optional.of(newDt);
+		return newDt;
 	}
 	
 	private void processClassTypeInheritance(Structure sdt, DebugInfoEntry die) {
@@ -222,29 +218,29 @@ public class DWARF1TypeImporter {
 		sdt.replaceAtOffset(memberOffset, memberDt, -1, memberName, null);
 	}
 	
-	private Optional<DataType> processUnionType(DebugInfoEntry die) {
+	private DataType processUnionType(DebugInfoEntry die) {
 		String name = DWARF1ImportUtils.extractName(die).orElseGet(() -> "anon_" + die.getRef());
 		DataTypeManager dataTypeManager = program.getDataTypeManager();
 		DataType existingDt = dataTypeManager.getDataType(categoryPath, name);
 		if (existingDt != null) {
 			// already imported
 			dwarfTypeManager.registerType(die.getRef(), existingDt);
-			return Optional.of(existingDt);
+			return existingDt;
 		}
-		UnionDataType udt = new UnionDataType(categoryPath, name, dataTypeManager);
-		Union newDt = (Union) dataTypeManager.addDataType(udt, DataTypeConflictHandler.DEFAULT_HANDLER);
-		dwarfTypeManager.registerType(die.getRef(), newDt);
+		UnionDataType tempUnionDt = new UnionDataType(categoryPath, name, dataTypeManager);
+		Union newUnionDt = (Union) dataTypeManager.addDataType(tempUnionDt, DataTypeConflictHandler.DEFAULT_HANDLER);
+		dwarfTypeManager.registerType(die.getRef(), newUnionDt);
 		//log.appendMsg("Struct " + name);
 		for (DebugInfoEntry childDie : die.getChildren()) {
 			switch (childDie.getTag()) {
 			case MEMBER:
-				processUnionTypeMember(newDt, childDie);
+				processUnionTypeMember(newUnionDt, childDie);
 				break;
 			default:
 				log.appendMsg("Unexpected child of union type: " + childDie.getTag());
 			}
 		}
-		return Optional.of(newDt);
+		return newUnionDt;
 	}
 
 	private void processUnionTypeMember(Union union, DebugInfoEntry die) {
@@ -254,7 +250,7 @@ public class DWARF1TypeImporter {
 		union.add(memberDt, memberName, null);
 	}
 	
-	private Optional<DataType> processEnumType(DebugInfoEntry die) throws IOException {
+	private DataType processEnumType(DebugInfoEntry die) throws IOException {
 		Optional<Number> byteSizeOpt = die.<ConstAttributeValue>getAttribute(AttributeName.BYTE_SIZE).map(av -> av.get());
 		Optional<byte[]> elementListOpt = die.<BlockAttributeValue>getAttribute(AttributeName.ELEMENT_LIST).map(av -> av.get());
 		
@@ -264,18 +260,18 @@ public class DWARF1TypeImporter {
 		if (existingDt != null) {
 			// already imported?
 			dwarfTypeManager.registerType(die.getRef(), existingDt);
-			return Optional.of(existingDt);
+			return existingDt;
 		}
 		
 		int size = byteSizeOpt.orElse(4).intValue();
-		var edt = new EnumDataType(categoryPath, name, size, dataTypeManager);
+		var tempEnumDt = new EnumDataType(categoryPath, name, size, dataTypeManager);
 		if (elementListOpt.isPresent()) {
-			processEnumElementList(edt, elementListOpt.get(), size);
+			processEnumElementList(tempEnumDt, elementListOpt.get(), size);
 		}
 
-		DataType newDt = dataTypeManager.addDataType(edt, DataTypeConflictHandler.DEFAULT_HANDLER);
-		dwarfTypeManager.registerType(die.getRef(), newDt);
-		return Optional.of(newDt);
+		DataType enumDt = dataTypeManager.addDataType(tempEnumDt, DataTypeConflictHandler.DEFAULT_HANDLER);
+		dwarfTypeManager.registerType(die.getRef(), enumDt);
+		return enumDt;
 	}
 	
 	private void processEnumElementList(EnumDataType edt, byte[] encodedElementList, int size) throws IOException {

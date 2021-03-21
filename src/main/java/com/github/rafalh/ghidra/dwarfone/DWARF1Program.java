@@ -2,6 +2,7 @@ package com.github.rafalh.ghidra.dwarfone;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 import com.github.rafalh.ghidra.dwarfone.model.DebugInfoEntry;
 
@@ -33,8 +34,8 @@ public class DWARF1Program {
 		return program.getDataTypeManager();
 	}
 	
-	public DebugInfoEntry getDebugInfoEntry(long ref) {
-		return dieMap.get(ref);
+	public Optional<DebugInfoEntry> getDebugInfoEntry(long ref) {
+		return Optional.ofNullable(dieMap.get(ref));
 	}
 
 	public void addEntry(DebugInfoEntry die) {
